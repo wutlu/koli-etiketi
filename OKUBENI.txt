@@ -1,0 +1,20 @@
+KOLI ETIKETI OLUSTURUCU
+=======================
+
+Ne yapar?
+- Excel dosyasini (1659954.xlsx formatinda) secersiniz.
+- Her satir icin JPEG'deki duzende, EAN-13 barkodlu bir etiket olusturur.
+- Ciktiyi Excel'in yanina "..._etiketler.pdf" olarak kaydeder ve acar.
+- Her sayfa bir etiket (A5 yatay), direkt yazdirilabilir.
+
+Windows'ta tek EXE nasil yapilir? (bir kere yapilir)
+1) https://www.python.org adresinden Python 3 kurun
+   (kurulumda "Add Python to PATH" kutusunu isaretleyin).
+2) Bu klasoru Windows bilgisayara kopyalayin.
+3) build.bat dosyasina cift tiklayin.
+4) Bittiginde "dist" klasorunde KoliEtiketi.exe olusur.
+   Bu tek exe'yi istediginiz bilgisayara kopyalayip kullanabilirsiniz
+   (o bilgisayarlarda Python gerekmez).
+
+Kullanim:
+- KoliEtiketi.exe'yi acin -> "Excel Sec ve Etiket Olustur" -> Excel'i secin.
