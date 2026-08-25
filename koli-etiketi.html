@@ -28,6 +28,7 @@
          background:var(--panel); color:var(--ink); cursor:pointer;}
   button.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
   button:disabled{opacity:.5; cursor:default;}
+  select{font:inherit; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--ink);}
   .bar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px;}
   .msg{margin-top:14px; font-size:14px;}
   .msg.ok{color:var(--ok);} .msg.err{color:var(--err); white-space:pre-wrap;}
@@ -36,6 +37,7 @@
 
   /* ---- Etiket ---- */
   .label{width:194mm; height:132mm; box-sizing:border-box; background:#fff; color:#000; margin:0 auto 22px;}
+  body.portrait .label{width:132mm; height:194mm;}
   .label table{width:100%; height:100%; border-collapse:collapse; table-layout:fixed;
                font-family:Arial,Helvetica,sans-serif; font-weight:bold; text-align:center;}
   .label td{border:1.2px solid #000; padding:2px 4px;}
@@ -44,11 +46,11 @@
   .rNorm td{height:11.5%; font-size:16px;}
   .rBar  td{height:22.5%;}
   .rNum  td{height:9%; font-size:15px;}
-  .label td.qty{font-size:64px; line-height:1;}
-  .label svg{display:block; margin:0 auto;}
+  .label td.qty{font-size:120px; line-height:1;}
+  body.portrait .label td.qty{font-size:86px;}
+  .label svg{display:block; margin:0 auto; max-width:100%; height:auto;}
 
   @media print{
-    @page{size:A5 landscape; margin:8mm;}
     body{background:#fff; padding:0; margin:0;}
     #sheet{padding:0; border:0; background:#fff;}
     .noprint{display:none !important;}
@@ -60,7 +62,7 @@
 <div class="wrap">
   <div class="noprint">
     <h1>Koli Etiketi Oluşturucu</h1>
-    <p class="sub">Excel dosyasını seçin; her satır için barkodlu bir etiket oluşturulur. Ardından <b>Yazdır / PDF Kaydet</b> ile A5 yatay çıktı alın.</p>
+    <p class="sub">Excel dosyasını seçin; her satır için barkodlu bir etiket oluşturulur. Ardından boyutu seçip <b>Yazdır / PDF Kaydet</b> ile çıktı alın.</p>
 
     <div class="panel">
       <div class="drop" id="drop">
@@ -69,6 +71,11 @@
       </div>
       <input type="file" id="file" accept=".xlsx" hidden>
       <div class="bar">
+        <label for="size">Etiket boyutu:</label>
+        <select id="size">
+          <option value="landscape" selected>A5 yatay (210 × 148 mm)</option>
+          <option value="portrait">A5 dikey (148 × 210 mm)</option>
+        </select>
         <button class="primary" id="print" disabled>Yazdır / PDF Kaydet</button>
         <button id="clear" disabled>Temizle</button>
       </div>
@@ -270,6 +277,15 @@ async function handle(file){
     msg("Hata: " + e.message, "err");
   }
 }
+
+const pageStyle = document.head.appendChild(document.createElement("style"));
+function applySize(){
+  const portrait = $("size").value === "portrait";
+  document.body.classList.toggle("portrait", portrait);
+  pageStyle.textContent = `@media print{@page{size:A5 ${portrait ? "portrait" : "landscape"}; margin:8mm;}}`;
+}
+$("size").onchange = applySize;
+applySize();
 
 $("drop").onclick = () => $("file").click();
 $("file").onchange = e => handle(e.target.files[0]);
