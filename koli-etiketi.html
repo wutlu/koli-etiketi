@@ -1,0 +1,284 @@
+<meta charset="utf-8">
+<title>Koli Etiketi Oluşturucu</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#fff; --ink:#16181d; --muted:#5c6370;
+    --line:#d8dbe0; --accent:#1f5eff; --accent-ink:#fff; --ok:#0a7d3c; --err:#b3261e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#15171c; --panel:#1e2128; --ink:#eceef2; --muted:#a2a9b6;
+      --line:#333842; --accent:#5a8bff; --accent-ink:#0b1020; --ok:#5ad48a; --err:#ff8a80;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15171c; --panel:#1e2128; --ink:#eceef2; --muted:#a2a9b6;
+    --line:#333842; --accent:#5a8bff; --accent-ink:#0b1020; --ok:#5ad48a; --err:#ff8a80;
+  }
+  body{background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif; margin:0; padding:28px 20px 60px;}
+  .wrap{max-width:900px; margin:0 auto;}
+  h1{font-size:22px; margin:0 0 4px;}
+  p.sub{color:var(--muted); margin:0 0 22px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px;}
+  .drop{border:2px dashed var(--line); border-radius:10px; padding:34px 18px; text-align:center; cursor:pointer; transition:.15s;}
+  .drop:hover,.drop.over{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, transparent);}
+  .drop b{display:block; font-size:16px; margin-bottom:4px;}
+  .drop span{color:var(--muted); font-size:13px;}
+  button{font:inherit; font-weight:600; padding:11px 18px; border-radius:8px; border:1px solid var(--line);
+         background:var(--panel); color:var(--ink); cursor:pointer;}
+  button.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+  button:disabled{opacity:.5; cursor:default;}
+  .bar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px;}
+  .msg{margin-top:14px; font-size:14px;}
+  .msg.ok{color:var(--ok);} .msg.err{color:var(--err); white-space:pre-wrap;}
+  .previewHead{margin:26px 0 10px; font-size:14px; color:var(--muted);}
+  #sheet{background:#fff; padding:14px; border-radius:10px; border:1px solid var(--line); overflow-x:auto;}
+
+  /* ---- Etiket ---- */
+  .label{width:194mm; height:132mm; box-sizing:border-box; background:#fff; color:#000; margin:0 auto 22px;}
+  .label table{width:100%; height:100%; border-collapse:collapse; table-layout:fixed;
+               font-family:Arial,Helvetica,sans-serif; font-weight:bold; text-align:center;}
+  .label td{border:1.2px solid #000; padding:2px 4px;}
+  .c1{width:27%} .c2{width:42%} .c3{width:31%}
+  .rPO   td{height:11.5%; font-size:19px;}
+  .rNorm td{height:11.5%; font-size:16px;}
+  .rBar  td{height:22.5%;}
+  .rNum  td{height:9%; font-size:15px;}
+  .label td.qty{font-size:64px; line-height:1;}
+  .label svg{display:block; margin:0 auto;}
+
+  @media print{
+    @page{size:A5 landscape; margin:8mm;}
+    body{background:#fff; padding:0; margin:0;}
+    #sheet{padding:0; border:0; background:#fff;}
+    .noprint{display:none !important;}
+    .label{margin:0 auto; page-break-after:always; break-after:page;}
+    .label:last-child{page-break-after:auto; break-after:auto;}
+  }
+</style>
+
+<div class="wrap">
+  <div class="noprint">
+    <h1>Koli Etiketi Oluşturucu</h1>
+    <p class="sub">Excel dosyasını seçin; her satır için barkodlu bir etiket oluşturulur. Ardından <b>Yazdır / PDF Kaydet</b> ile A5 yatay çıktı alın.</p>
+
+    <div class="panel">
+      <div class="drop" id="drop">
+        <b>Excel dosyasını buraya sürükleyin</b>
+        <span>veya tıklayarak seçin (.xlsx)</span>
+      </div>
+      <input type="file" id="file" accept=".xlsx" hidden>
+      <div class="bar">
+        <button class="primary" id="print" disabled>Yazdır / PDF Kaydet</button>
+        <button id="clear" disabled>Temizle</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="previewHead" id="previewHead" hidden>Önizleme</div>
+  </div>
+  <div id="sheet" hidden></div>
+</div>
+
+<script>
+const HEADERS = ["NS PO","Purchase Order","Style Code","Style Name","Colour","Size","Carton Qty","EAN/UPC Barcode","Carton Number"];
+
+/* ---------- ZIP (xlsx) okuma — kütüphanesiz ---------- */
+async function unzip(buf){
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let eocd = -1;
+  for(let i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--){
+    if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  }
+  if(eocd < 0) throw new Error("Geçerli bir .xlsx dosyası değil (ZIP yapısı bulunamadı).");
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const files = {};
+  for(let n = 0; n < count; n++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const cmtLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+    const lNameLen = dv.getUint16(lho + 26, true);
+    const lExtraLen = dv.getUint16(lho + 28, true);
+    const start = lho + 30 + lNameLen + lExtraLen;
+    files[name] = { method, data: u8.subarray(start, start + compSize) };
+    p += 46 + nameLen + extraLen + cmtLen;
+  }
+  const out = {};
+  for(const [name, f] of Object.entries(files)){
+    if(f.method === 0){ out[name] = new TextDecoder().decode(f.data); continue; }
+    if(f.method !== 8) continue;
+    const stream = new Blob([f.data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    out[name] = await new Response(stream).text();
+  }
+  return out;
+}
+
+const colIndex = ref => {
+  let n = 0;
+  for(const ch of ref.replace(/\d+/g, "")) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+};
+
+async function readXlsx(buf){
+  const files = await unzip(buf);
+  const parse = xml => new DOMParser().parseFromString(xml, "application/xml");
+
+  const shared = [];
+  if(files["xl/sharedStrings.xml"]){
+    for(const si of parse(files["xl/sharedStrings.xml"]).getElementsByTagName("si")){
+      let s = "";
+      for(const t of si.getElementsByTagName("t")) s += t.textContent;
+      shared.push(s);
+    }
+  }
+
+  let sheetPath = "xl/worksheets/sheet1.xml";
+  if(files["xl/workbook.xml"] && files["xl/_rels/workbook.xml.rels"]){
+    const first = parse(files["xl/workbook.xml"]).getElementsByTagName("sheet")[0];
+    const rid = first && (first.getAttribute("r:id") || first.getAttribute("id"));
+    if(rid){
+      for(const rel of parse(files["xl/_rels/workbook.xml.rels"]).getElementsByTagName("Relationship")){
+        if(rel.getAttribute("Id") === rid){
+          sheetPath = "xl/" + rel.getAttribute("Target").replace(/^\/?xl\//, "");
+          break;
+        }
+      }
+    }
+  }
+  if(!files[sheetPath]) sheetPath = Object.keys(files).find(k => /^xl\/worksheets\/.*\.xml$/.test(k));
+  if(!sheetPath) throw new Error("Excel içinde çalışma sayfası bulunamadı.");
+
+  const rows = [];
+  for(const row of parse(files[sheetPath]).getElementsByTagName("row")){
+    const arr = [];
+    for(const c of row.getElementsByTagName("c")){
+      const i = colIndex(c.getAttribute("r") || "A1");
+      const t = c.getAttribute("t");
+      let v = "";
+      if(t === "inlineStr"){
+        for(const tn of c.getElementsByTagName("t")) v += tn.textContent;
+      }else{
+        const vn = c.getElementsByTagName("v")[0];
+        v = vn ? vn.textContent : "";
+        if(t === "s") v = shared[+v] ?? "";
+      }
+      arr[i] = v;
+    }
+    rows.push(arr);
+  }
+  return rows;
+}
+
+/* ---------- EAN-13 barkod (SVG) ---------- */
+const L = ["0001101","0011001","0010011","0111101","0100011","0110001","0101111","0111011","0110111","0001011"];
+const G = ["0100111","0110011","0011011","0100001","0011101","0111001","0000101","0010001","0001001","0010111"];
+const R = ["1110010","1100110","1101100","1000010","1011100","1001110","1010000","1000100","1001000","1110100"];
+const PARITY = ["LLLLLL","LLGLGG","LLGGLG","LLGGGL","LGLLGG","LGGLLG","LGGGLL","LGLGLG","LGLGGL","LGGLGL"];
+
+function ean13(code){
+  let d = String(code).replace(/\D/g, "");
+  if(d.length === 12) d += String((10 - ([...d].reduce((s,n,i)=> s + n*(i%2?3:1), 0) % 10)) % 10);
+  if(d.length !== 13) return null;
+  const p = PARITY[+d[0]];
+  let bits = "101";
+  for(let i = 1; i <= 6; i++) bits += (p[i-1] === "L" ? L : G)[+d[i]];
+  bits += "01010";
+  for(let i = 7; i <= 12; i++) bits += R[+d[i]];
+  bits += "101";
+  return { bits, digits: d };
+}
+
+function barcodeSVG(code, moduleW = 1.9, height = 58){
+  const r = ean13(code);
+  if(!r) return `<div style="font-size:15px">${String(code ?? "")}</div>`;
+  const quiet = 10, W = (r.bits.length + quiet * 2) * moduleW, fs = 11, H = height + fs + 4;
+  let bars = "";
+  const guard = i => (i < 3 || (i >= 45 && i < 50) || i >= 92);
+  for(let i = 0; i < r.bits.length; i++){
+    if(r.bits[i] !== "1") continue;
+    const h = guard(i) ? height + 6 : height;
+    bars += `<rect x="${(quiet + i) * moduleW}" y="0" width="${moduleW}" height="${h}"/>`;
+  }
+  const d = r.digits;
+  const tx = (i) => (quiet + i) * moduleW;
+  const txt = `<g font-family="Arial" font-size="${fs}" font-weight="normal">
+      <text x="${tx(-1)}" y="${H-1}" text-anchor="middle">${d[0]}</text>
+      <text x="${tx(24)}" y="${H-1}" text-anchor="middle">${d.slice(1,7)}</text>
+      <text x="${tx(69)}" y="${H-1}" text-anchor="middle">${d.slice(7)}</text></g>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${bars}${txt}</svg>`;
+}
+
+/* ---------- Etiket oluşturma ---------- */
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+
+function labelHTML(r){
+  const cell = (t, cls = "") => `<td class="${cls}">${t}</td>`;
+  const line = (name) => `<tr class="rNorm">${cell(esc(name), "c1")}${cell(esc(r[name]) || "N/A", "c2")}</tr>`;
+  return `<div class="label"><table>
+    <tr class="rPO"><td colspan="3">NS PO : ${esc(r["NS PO"])}</td></tr>
+    <tr class="rNorm">
+      ${cell("Purchase Order", "c1")}${cell(esc(r["Purchase Order"]) || "N/A", "c2")}
+      <td class="c3">Carton Qty</td>
+    </tr>
+    <tr class="rNorm">${cell("Style Code", "c1")}${cell(esc(r["Style Code"]) || "N/A", "c2")}
+      <td class="qty" rowspan="6">${esc(r["Carton Qty"])}</td></tr>
+    ${["Style Name","Colour","Size"].map(line).join("")}
+    <tr class="rBar">${cell("EAN/UPC Barcode", "c1")}${cell(barcodeSVG(r["EAN/UPC Barcode"]), "c2")}</tr>
+    <tr class="rNum">${cell("Carton Number", "c1")}${cell(esc(r["Carton Number"]), "c2")}</tr>
+  </table></div>`;
+}
+
+/* ---------- Arayüz ---------- */
+const $ = id => document.getElementById(id);
+const msg = (text, cls = "") => { $("msg").className = "msg " + cls; $("msg").textContent = text; };
+
+async function handle(file){
+  if(!file) return;
+  msg("Okunuyor…");
+  try{
+    const rows = await readXlsx(await file.arrayBuffer());
+    if(!rows.length) throw new Error("Excel dosyası boş.");
+
+    const head = (rows[0] || []).map(v => String(v ?? "").trim());
+    const idx = {};
+    for(const h of HEADERS){
+      const i = head.findIndex(x => x.toLowerCase() === h.toLowerCase());
+      if(i < 0) throw new Error(`Excel'de "${h}" sütunu bulunamadı.\nBulunan başlıklar: ${head.filter(Boolean).join(", ")}`);
+      idx[h] = i;
+    }
+
+    const data = rows.slice(1)
+      .map(r => Object.fromEntries(HEADERS.map(h => [h, String(r[idx[h]] ?? "").trim()])))
+      .filter(o => HEADERS.some(h => o[h] !== ""));
+    if(!data.length) throw new Error("Excel'de veri satırı bulunamadı.");
+
+    $("sheet").innerHTML = data.map(labelHTML).join("");
+    $("sheet").hidden = false;
+    $("previewHead").hidden = false;
+    $("print").disabled = $("clear").disabled = false;
+    msg(`${data.length} etiket hazır. Yazdır / PDF Kaydet ile çıktı alabilirsiniz.`, "ok");
+  }catch(e){
+    console.error(e);
+    $("sheet").hidden = true; $("previewHead").hidden = true;
+    $("print").disabled = $("clear").disabled = true;
+    msg("Hata: " + e.message, "err");
+  }
+}
+
+$("drop").onclick = () => $("file").click();
+$("file").onchange = e => handle(e.target.files[0]);
+$("drop").ondragover = e => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = e => { e.preventDefault(); $("drop").classList.remove("over"); handle(e.dataTransfer.files[0]); };
+$("print").onclick = () => window.print();
+$("clear").onclick = () => {
+  $("sheet").innerHTML = ""; $("sheet").hidden = true; $("previewHead").hidden = true;
+  $("file").value = ""; $("print").disabled = $("clear").disabled = true; msg("");
+};
+</script>
